@@ -1,0 +1,25 @@
+---
+- name: Demonstration Playbook
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: Display a message
+      ansible.builtin.debug:
+        msg: "Hello, Ansible!"
+    - name: Check if python installed.
+      ansible.builtin.raw: python3 --version
+      register: python_check # Register result / create variable
+      ignore_errors: yes
+      changed_when: false
+    - name: Debug python check result
+      ansible.builtin.debug:
+        var: python_check # Display variable content
+    - name: Install python RAW
+      ansible.builtin.raw: apt update -y && apt install python3 -y
+      when: python_check is failed
+    - name: Create file
+      # modules ansible (action)
+      ansible.builtin.file:
+        path: /tmp/ansible_test_file
+        state: absent
