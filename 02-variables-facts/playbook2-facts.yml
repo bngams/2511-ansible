@@ -1,0 +1,12 @@
+---
+- name: Output facts within a playbook
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Print distribution
+      ansible.builtin.debug:
+        msg: "Host {{ inventory_hostname }} is running {{ ansible_distribution }}"
+
+    - name: Print default IPv4 address
+      ansible.builtin.debug:
+        msg: "Default IP: {{ ansible_default_ipv4.address }}"
