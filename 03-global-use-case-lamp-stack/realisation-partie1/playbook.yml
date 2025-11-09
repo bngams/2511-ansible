@@ -1,0 +1,134 @@
+---
+# WEB SERVER
+
+- name: Configure web server
+  hosts: web
+  become: true
+  vars_files: vars/main.yml
+  gather_facts: false
+
+  tasks:
+  - name: install apache and php last version
+    ansible.builtin.apt:
+      name:
+        - apache2
+        - php
+        - php-mysql
+      state: present
+      update_cache: yes
+
+  - name: Give writable mode to http folder
+    ansible.builtin.file:
+      path: /var/www/html
+      state: directory
+      mode: '0755'
+
+  - name: remove default index.html
+    ansible.builtin.file:
+      path: /var/www/html/index.html
+      state: absent
+
+  - name: upload web app source
+    ansible.builtin.copy:
+      src: app/
+      dest: /var/www/html/
+
+  - name: deploy php database config
+    ansible.builtin.template:
+      src: db-config.php.j2
+      dest: /var/www/html/db-config.php
+  
+  - name: ensure apache service is start
+    ansible.builtin.service:
+      name: apache2
+      state: started
+      enabled: yes
+
+###################
+# DATABASE SERVER
+###################
+
+- name: Configure database server
+  hosts: db
+  become: true
+  vars_files: vars/main.yml
+  vars:
+    root_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          64656564376136363030663261353636653338363261666161653466636139653736626536613330
+          3538323730663262613961363561656430366665616463630a643934343232393963396434353332
+          33666333356437613233643639386237303239336164363738323638346461623030343137666136
+          6662366333363363360a636539666565613132383738323061376438373933343837356634336330
+          63613332623963303466383934376262336535666135643933313565313237373038
+
+  tasks:
+  - name: install mysql
+    ansible.builtin.apt:
+      name: 
+        - mariadb-server
+        - python3-pymysql # for mysql_db and mysql_user modules
+      state: present
+      update_cache: yes  
+
+  - name: Create MySQL client config
+    ansible.builtin.copy:
+      dest: "/root/.my.cnf"
+      content: |
+        [client]
+        user=root
+        password={{ root_password }}
+      mode: 0400
+
+  - name: Allow external MySQL connexions (1/2)
+    ansible.builtin.lineinfile:
+      path: /etc/mysql/mariadb.conf.d/50-server.cnf
+      regexp: '^skip-external-locking'
+      line: "# skip-external-locking"
+    notify: Restart mysql
+
+  - name: Allow external MySQL connexions (2/2)
+    ansible.builtin.lineinfile:
+      path: /etc/mysql/mariadb.conf.d/50-server.cnf
+      regexp: '^bind-address'
+      line: "# bind-address"
+    notify: Restart mysql
+
+  - name: upload sql table config
+    ansible.builtin.template:
+      src: "table.sql.j2"
+      dest: "/tmp/table.sql"
+  
+  - name: Set MySQL root password
+    community.mysql.mysql_user:
+      name: root
+      password: "{{ root_password }}"
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+      host_all: true
+      check_implicit_admin: true
+      state: present
+
+  - name: add sql table to database
+    community.mysql.mysql_db:
+      name: "{{ mysql_dbname }}"
+      # state: present
+      login_user: root
+      login_password: '{{ root_password }}'
+      state: import 
+      target: /tmp/table.sql
+
+  - name: "Create {{ mysql_user }} with all {{ mysql_dbname }} privileges"
+    community.mysql.mysql_user:
+      name: "{{ mysql_user }}"
+      password: "{{ mysql_password }}"
+      priv: "{{ mysql_dbname }}.*:ALL"
+      host: "{{ webserver_host }}"
+      state: present
+      login_user: root
+      login_password: '{{ root_password }}'
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  handlers:
+    - name: Restart mysql
+      service:
+        name: mysql
+        state: restarted

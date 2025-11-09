@@ -1,0 +1,69 @@
+---
+########################################
+# WEBSERVER ROLE - METADATA
+########################################
+# This file contains metadata about the role:
+# - Dependencies on other roles
+# - Galaxy information (if publishing to Ansible Galaxy)
+# - Supported platforms
+# - Tags
+
+# ROLE DEPENDENCIES
+# If this role depends on other roles, list them here
+# They will be executed BEFORE this role runs
+dependencies: []
+  # Example of role dependency:
+  # - role: common
+  #   vars:
+  #     some_parameter: 3
+  # - role: firewall
+  #   tags: ['firewall']
+
+# GALAXY INFORMATION
+# If you plan to publish this role to Ansible Galaxy, fill in this metadata
+galaxy_info:
+  # Your name or organization
+  author: Aelion Training
+
+  # A brief description of the role
+  description: Configure Apache web server with PHP support for Debian and Alpine Linux
+
+  # Company name (optional)
+  # company: your_company
+
+  # License of the role (required for Galaxy)
+  license: MIT
+
+  # Minimum Ansible version required
+  min_ansible_version: "2.9"
+
+  # Platforms this role supports
+  # These are used for Galaxy search/filtering
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye  # Debian 11
+        - bookworm  # Debian 12
+    - name: Ubuntu
+      versions:
+        - focal     # 20.04 LTS
+        - jammy     # 22.04 LTS
+        - noble     # 24.04 LTS
+    - name: Alpine
+      versions:
+        - all
+
+  # Categories for Ansible Galaxy (max 20)
+  galaxy_tags:
+    - web
+    - apache
+    - php
+    - lamp
+    - webserver
+    - debian
+    - alpine
+
+# COLLECTIONS
+# If this role requires specific Ansible collections
+collections:
+  - community.general  # Required for Alpine's apk module

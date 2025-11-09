@@ -1,0 +1,68 @@
+---
+# Ce rôle n'a PAS besoin de gather_facts (utilise raw)
+# Objectif : installer python3 si absent, sur plusieurs distros
+
+# 1) Vérifier si python3 est déjà présent
+- name: Check python3
+  ansible.builtin.raw: "command -v python3"
+  register: _pycheck
+  changed_when: false
+  failed_when: false
+
+# 2) Détecter le gestionnaire de paquets
+- name: Detect package manager
+  ansible.builtin.raw: |
+    if command -v apt-get >/dev/null 2>&1; then echo apt;
+    elif command -v dnf >/dev/null 2>&1; then echo dnf;
+    elif command -v yum >/dev/null 2>&1; then echo yum;
+    elif command -v apk >/dev/null 2>&1; then echo apk;
+    elif command -v zypper >/dev/null 2>&1; then echo zypper;
+    else echo unknown;
+    fi
+  register: _pkgmgr
+  changed_when: false
+  failed_when: false
+  when: _pycheck.rc != 0
+
+# 3) Installer python3 selon le gestionnaire (si manquant)
+- name: Install python3 (apt)
+  ansible.builtin.raw: "apt-get update -y && apt-get install -y python3"
+  when:
+    - _pycheck.rc != 0
+    - _pkgmgr.stdout | trim == "apt"
+
+- name: Install python3 (dnf)
+  ansible.builtin.raw: "dnf install -y python3"
+  when:
+    - _pycheck.rc != 0
+    - _pkgmgr.stdout | trim == "dnf"
+
+- name: Install python3 (yum)
+  ansible.builtin.raw: "yum install -y python3 || yum install -y python36 || yum install -y python"
+  when:
+    - _pycheck.rc != 0
+    - _pkgmgr.stdout | trim == "yum"
+
+- name: Install python3 (apk)
+  ansible.builtin.raw: "apk add --no-cache python3"
+  when:
+    - _pycheck.rc != 0
+    - _pkgmgr.stdout | trim == "apk"
+
+- name: Install python3 (zypper)
+  ansible.builtin.raw: "zypper --non-interactive install python3"
+  when:
+    - _pycheck.rc != 0
+    - _pkgmgr.stdout | trim == "zypper"
+
+# 4) Vérifier de nouveau (échoue si toujours absent)
+- name: Verify python3 present
+  ansible.builtin.raw: "command -v python3"
+  register: _py_path
+  changed_when: false
+  failed_when: _py_path.rc != 0
+
+# 5) Indiquer à Ansible quel interpréteur utiliser ensuite
+- name: Set interpreter for subsequent tasks
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: "{{ _py_path.stdout | default('/usr/bin/python3') }}"

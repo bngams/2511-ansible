@@ -1,0 +1,187 @@
+---
+########################################
+# DATABASE ROLE - MAIN TASKS
+########################################
+# This role configures a MariaDB/MySQL database server
+# It handles installation, security configuration, database creation,
+# and user management with proper privileges
+
+# WHAT THIS ROLE DOES:
+# 1. Installs MariaDB server and required Python libraries
+# 2. Configures MySQL root password securely
+# 3. Allows remote connections from web servers
+# 4. Creates application database and imports schema
+# 5. Creates dedicated database user with proper privileges
+
+########################################
+# TASK 1: Install MariaDB Server
+########################################
+# MariaDB is a drop-in replacement for MySQL
+# We also need Python MySQL libraries for Ansible modules to work
+
+- name: Install MariaDB server and dependencies (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - mariadb-server      # MariaDB database server
+      - python3-pymysql     # Python library required by mysql_* Ansible modules
+    state: present
+    update_cache: yes       # Update package cache before installation
+  when: ansible_facts['os_family'] == "Debian"
+  # python3-pymysql is REQUIRED for Ansible's community.mysql modules
+  # Without it, mysql_db and mysql_user modules will fail
+
+- name: Install MariaDB server and dependencies (Alpine)
+  community.general.apk:
+    name:
+      - mariadb             # MariaDB server on Alpine
+      - mariadb-client      # MySQL client tools
+      - py3-pymysql         # Python MySQL library for Ansible modules
+    state: present
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Alpine"
+  # Alpine uses different package names for the same software
+
+########################################
+# TASK 2: Create MySQL Client Configuration
+########################################
+# Create ~/.my.cnf for root user to avoid passing credentials on command line
+# This file allows MySQL commands to authenticate automatically
+
+- name: Create MySQL client configuration for root
+  ansible.builtin.copy:
+    dest: "/root/.my.cnf"
+    content: |
+      [client]
+      user=root
+      password={{ root_password }}
+    mode: 0400  # Read-only for owner (root) - IMPORTANT for security!
+  # File permissions 0400 mean:
+  # - Owner (root): read only
+  # - Group: no permissions
+  # - Others: no permissions
+  # This protects the root password from being read by other users
+
+########################################
+# TASK 3: Configure MySQL for Remote Access (Part 1)
+########################################
+# By default, MySQL only accepts local connections
+# We need to modify the configuration to allow remote connections
+
+- name: Allow external MySQL connections - skip-external-locking (Debian/Ubuntu)
+  ansible.builtin.lineinfile:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf  # MariaDB config file
+    regexp: '^skip-external-locking'    # Find line starting with this
+    line: "# skip-external-locking"     # Comment it out
+  notify: Restart mysql  # Trigger handler to restart MySQL service
+  when: ansible_facts['os_family'] == "Debian"
+  # The lineinfile module modifies a single line in a file
+  # If the line matches the regexp, it's replaced with 'line'
+
+- name: Allow external MySQL connections - skip-external-locking (Alpine)
+  ansible.builtin.lineinfile:
+    path: /etc/my.cnf.d/mariadb-server.cnf  # Alpine config location
+    regexp: '^skip-external-locking'
+    line: "# skip-external-locking"
+  notify: Restart mysql
+  when: ansible_facts['os_family'] == "Alpine"
+
+########################################
+# TASK 4: Configure MySQL for Remote Access (Part 2)
+########################################
+# The bind-address directive controls which network interface MySQL listens on
+# By default it's 127.0.0.1 (localhost only)
+# We comment it out to listen on all interfaces
+
+- name: Allow external MySQL connections - bind-address (Debian/Ubuntu)
+  ansible.builtin.lineinfile:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf
+    regexp: '^bind-address'             # Find the bind-address line
+    line: "# bind-address"              # Comment it out
+  notify: Restart mysql  # Changes require MySQL restart to take effect
+  when: ansible_facts['os_family'] == "Debian"
+  # SECURITY NOTE: In production, you should bind to specific IPs
+  # or use firewall rules to restrict access
+
+- name: Allow external MySQL connections - bind-address (Alpine)
+  ansible.builtin.lineinfile:
+    path: /etc/my.cnf.d/mariadb-server.cnf
+    regexp: '^bind-address'
+    line: "# bind-address"
+  notify: Restart mysql
+  when: ansible_facts['os_family'] == "Alpine"
+
+########################################
+# TASK 5: Deploy Database Schema Template
+########################################
+# Upload the SQL file that creates tables and initial data
+
+- name: Upload database schema from template
+  ansible.builtin.template:
+    src: "table.sql.j2"       # Jinja2 template with SQL commands
+    dest: "/tmp/table.sql"    # Temporary location on target server
+  # We use a template (not copy) to allow variable substitution in SQL
+  # For example: CREATE DATABASE {{ mysql_dbname }}
+
+########################################
+# TASK 6: Set MySQL Root Password
+########################################
+# Secure the MySQL installation by setting a root password
+# This is one of the first security steps after installation
+
+- name: Set MySQL root password
+  community.mysql.mysql_user:
+    name: root                      # MySQL root user
+    password: "{{ root_password }}" # From Ansible Vault (encrypted)
+    login_unix_socket: /var/run/mysqld/mysqld.sock  # Connect via Unix socket
+    host_all: true                  # Set password for root@localhost and root@%
+    check_implicit_admin: true      # Check if we already have admin access
+    state: present
+  # SECURITY: root_password should be stored in Ansible Vault (encrypted)
+  # login_unix_socket uses local socket auth (works before password is set)
+  # This task is idempotent - safe to run multiple times
+
+########################################
+# TASK 7: Create Database and Import Schema
+########################################
+# Create the application database and import the SQL schema
+
+- name: Create database and import schema
+  community.mysql.mysql_db:
+    name: "{{ mysql_dbname }}"          # Database name from variables
+    state: import                       # Import SQL file into database
+    target: /tmp/table.sql              # SQL file to import
+    login_user: root
+    login_password: "{{ root_password }}"
+  # This module will:
+  # 1. Create the database if it doesn't exist
+  # 2. Import the SQL file (CREATE TABLE, INSERT, etc.)
+  # If database exists and tables exist, this may fail or skip
+  # Consider using state: present + separate import task for production
+
+########################################
+# TASK 8: Create Application Database User
+########################################
+# Create a dedicated user for the web application
+# SECURITY BEST PRACTICE: Never use root user from application code
+
+- name: Create application database user with privileges
+  community.mysql.mysql_user:
+    name: "{{ mysql_user }}"            # Application username
+    password: "{{ mysql_password }}"    # Application password
+    priv: "{{ mysql_dbname }}.*:ALL"    # Grant ALL privileges on database
+    host: "{{ webserver_host }}"        # Only allow connections from web server
+    state: present
+    login_user: root                    # Use root to create the user
+    login_password: "{{ root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  # Privilege format: "database.table:privileges"
+  # "dbname.*:ALL" means all privileges on all tables in database
+  # Host restriction improves security - only specified host can connect
+  # In production, use specific IP addresses, not wildcards
+
+# VARIABLES REQUIRED BY THIS ROLE:
+# - root_password: MySQL root password (should be in Ansible Vault)
+# - mysql_dbname: Name of the application database
+# - mysql_user: Application database username
+# - mysql_password: Application database password
+# - webserver_host: Hostname/IP of web server (for user access control)

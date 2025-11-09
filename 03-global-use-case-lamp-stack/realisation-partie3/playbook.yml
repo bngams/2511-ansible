@@ -1,0 +1,171 @@
+---
+########################################
+# LAMP STACK DEPLOYMENT PLAYBOOK
+########################################
+# This playbook demonstrates the use of Ansible ROLES
+# to deploy a complete LAMP (Linux, Apache, MySQL, PHP) stack
+#
+# WHAT ARE ROLES?
+# Roles are Ansible's way of organizing automation content into reusable components.
+# Instead of writing all tasks in one playbook, we split functionality into roles:
+# - webserver role: Configures Apache + PHP
+# - database role: Configures MariaDB/MySQL
+#
+# BENEFITS OF USING ROLES:
+# 1. REUSABILITY: Use the same role across multiple playbooks/projects
+# 2. ORGANIZATION: Keep related files (tasks, templates, vars) together
+# 3. MAINTAINABILITY: Easier to update and debug isolated components
+# 4. SHARING: Roles can be shared via Ansible Galaxy or Git
+# 5. TESTING: Test roles independently with tools like Molecule
+# 6. SEPARATION OF CONCERNS: Each role handles one responsibility
+#
+# DIRECTORY STRUCTURE WITH ROLES:
+# playbook.yml           <- Main playbook (this file)
+# inventory/             <- Inventory files defining hosts
+# vars/                  <- Variables used by playbook
+# roles/
+#   webserver/           <- Web server role
+#     tasks/             <- Tasks to install/configure Apache+PHP
+#     templates/         <- Jinja2 templates (db-config.php.j2)
+#     files/             <- Static files (web app files)
+#     defaults/          <- Default variables
+#     handlers/          <- Handlers (if needed)
+#     meta/              <- Role metadata
+#   database/            <- Database server role
+#     tasks/             <- Tasks to install/configure MySQL
+#     templates/         <- Jinja2 templates (table.sql.j2)
+#     handlers/          <- Service restart handlers
+#     defaults/          <- Default variables
+#     meta/              <- Role metadata
+
+########################################
+# PLAY 1: Configure Web Server
+########################################
+# This play applies the 'webserver' role to all hosts in the 'web' group
+
+- name: Configure web servers with Apache and PHP
+  hosts: web              # Target hosts from inventory 'web' group
+  become: true            # Execute tasks with sudo/root privileges
+  gather_facts: true      # Collect system information (OS, distribution, etc.)
+
+  # LOAD VARIABLES
+  # Variables defined in external files for better organization
+  vars_files:
+    - vars/main.yml       # Contains mysql_*, webserver_host variables
+
+  # APPLY ROLES
+  # Roles are applied in the order listed
+  roles:
+    - role: webserver     # Apply webserver role
+      # The role will:
+      # 1. Install Apache and PHP (distribution-specific packages)
+      # 2. Configure document root permissions
+      # 3. Deploy web application files
+      # 4. Deploy database configuration from template
+      # 5. Start and enable Apache service
+
+  # HOW ROLES ARE EXECUTED:
+  # Ansible looks for the role in these locations (in order):
+  # 1. roles/ directory next to the playbook
+  # 2. /etc/ansible/roles/
+  # 3. ~/.ansible/roles/
+  # 4. Directories specified in ansible.cfg (roles_path)
+  #
+  # For each role, Ansible automatically loads (if they exist):
+  # - defaults/main.yml    (lowest priority variables)
+  # - vars/main.yml        (high priority variables)
+  # - tasks/main.yml       (tasks to execute)
+  # - handlers/main.yml    (handlers)
+  # - templates/           (Jinja2 templates)
+  # - files/               (static files)
+
+########################################
+# PLAY 2: Configure Database Server
+########################################
+# This play applies the 'database' role to all hosts in the 'db' group
+
+- name: Configure database server with MariaDB
+  hosts: db               # Target hosts from inventory 'db' group
+  become: true            # Execute with root privileges
+  gather_facts: true      # Required to detect OS family (Debian vs Alpine)
+
+  # LOAD VARIABLES
+  vars_files:
+    - vars/main.yml       # Contains database configuration variables
+
+  # INLINE VARIABLES
+  # These variables are specific to this play
+  vars:
+    # MySQL root password - ENCRYPTED with Ansible Vault
+    # To create a vaulted variable:
+    #   ansible-vault encrypt_string 'your_password' --name 'root_password'
+    # To view:
+    #   ansible-vault view vars/main.yml
+    root_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          64656564376136363030663261353636653338363261666161653466636139653736626536613330
+          3538323730663262613961363561656430366665616463630a643934343232393963396434353332
+          33666333356437613233643639386237303239336164363738323638346461623030343137666136
+          6662366333363363360a636539666565613132383738323061376438373933343837356634336330
+          63613332623963303466383934376262336535666135643933313565313237373038
+    # The !vault tag indicates this is encrypted data
+    # Run playbook with: ansible-playbook playbook.yml --ask-vault-pass
+
+  # APPLY ROLES
+  roles:
+    - role: database      # Apply database role
+      # The role will:
+      # 1. Install MariaDB server and Python MySQL libraries
+      # 2. Set MySQL root password securely
+      # 3. Configure MySQL for remote connections
+      # 4. Create application database and import schema
+      # 5. Create application user with proper privileges
+      # 6. Restart MySQL when configuration changes (via handler)
+
+########################################
+# RUNNING THIS PLAYBOOK
+########################################
+# Basic execution:
+#   ansible-playbook playbook.yml --ask-vault-pass
+#
+# With inventory file:
+#   ansible-playbook -i inventory/hosts.yml playbook.yml --ask-vault-pass
+#
+# Check mode (dry-run):
+#   ansible-playbook playbook.yml --ask-vault-pass --check
+#
+# Limit to specific hosts:
+#   ansible-playbook playbook.yml --ask-vault-pass --limit web
+#
+# With vault password file:
+#   ansible-playbook playbook.yml --vault-password-file vault-pass.txt
+#
+# Verbose output (for debugging):
+#   ansible-playbook playbook.yml --ask-vault-pass -vvv
+
+########################################
+# COMPARISON: TASKS vs ROLES
+########################################
+# WITHOUT ROLES (all tasks in playbook):
+# playbook.yml            <- 200+ lines with all tasks mixed together
+#
+# WITH ROLES (organized structure):
+# playbook.yml            <- Clean, 50 lines, high-level view
+# roles/webserver/...     <- All web server related content
+# roles/database/...      <- All database related content
+#
+# Result: Better organization, easier maintenance, reusable components
+
+########################################
+# TEACHING NOTES
+########################################
+# Key concepts to explain to students:
+#
+# 1. ROLE STRUCTURE: Each role follows a standard directory layout
+# 2. VARIABLE PRECEDENCE: defaults < vars_files < vars < extra-vars
+# 3. HANDLERS: Special tasks that run when notified (see database role)
+# 4. TEMPLATES: Jinja2 files with {{ variables }} for dynamic content
+# 5. ANSIBLE VAULT: Encrypt sensitive data (passwords, keys)
+# 6. IDEMPOTENCY: Safe to run multiple times (same result)
+# 7. OS DETECTION: gather_facts + when conditions for multi-distro support
+# 8. SEPARATION OF CONCERNS: Each role has one clear responsibility

@@ -1,0 +1,42 @@
+---
+########################################
+# DATABASE ROLE - DEFAULT VARIABLES
+########################################
+# Default values for database role variables
+# These have the LOWEST priority and can be overridden by:
+# - inventory variables
+# - playbook variables
+# - extra vars (-e on command line)
+
+# MySQL/MariaDB service name (distribution-specific)
+# This variable is set by tasks based on OS family
+# Debian/Ubuntu: mysql
+# Alpine: mariadb
+mysql_service_name: mysql
+
+# MySQL configuration file paths (distribution-specific)
+# Debian/Ubuntu uses split configuration directory
+mysql_config_path_debian: /etc/mysql/mariadb.conf.d/50-server.cnf
+# Alpine uses single configuration file approach
+mysql_config_path_alpine: /etc/my.cnf.d/mariadb-server.cnf
+
+# MySQL Unix socket path (for local authentication)
+mysql_socket_path: /var/run/mysqld/mysqld.sock
+
+# Temporary directory for SQL files
+mysql_temp_dir: /tmp
+
+# IMPORTANT: The following variables MUST be provided by the playbook or inventory
+# They are listed here for documentation purposes only (no default values)
+#
+# root_password: ""        # MySQL root password (use Ansible Vault!)
+# mysql_dbname: ""         # Application database name
+# mysql_user: ""           # Application database username
+# mysql_password: ""       # Application database password
+# webserver_host: ""       # Web server hostname/IP for user access control
+
+# SECURITY NOTE:
+# NEVER store passwords in plain text!
+# Always use Ansible Vault for sensitive data:
+#   ansible-vault create secrets.yml
+#   ansible-vault encrypt_string 'mypassword' --name 'root_password'

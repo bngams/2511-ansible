@@ -1,0 +1,211 @@
+---
+###################
+# WEB SERVER
+###################
+# This playbook configures a LAMP stack web server on multiple Linux distributions
+# It demonstrates how to handle differences between Debian/Ubuntu and Alpine Linux
+
+- name: Configure web server
+  hosts: web
+  become: true  # Execute tasks with sudo/root privileges
+  vars_files: vars/main.yml  # Load variables from external file
+  gather_facts: true  # IMPORTANT: Changed to true - we need to collect system facts to detect OS family
+
+  tasks:
+    ########################################
+    # TASK 1: Install Apache and PHP packages
+    ########################################
+    # Different Linux distributions use different package managers and package names
+    # - Debian/Ubuntu: uses APT package manager
+    # - Alpine: uses APK package manager
+    # We use the 'when' condition to execute tasks based on OS family
+
+    - name: Install Apache and PHP (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name:
+          - apache2       # Apache web server on Debian
+          - php           # PHP interpreter
+          - php-mysql     # PHP extension for MySQL connectivity
+        state: present    # Ensure packages are installed
+        update_cache: yes # Update package cache before installing (equivalent to 'apt update')
+      when: ansible_facts['os_family'] == "Debian"
+      # The 'when' clause checks the OS family detected by gather_facts
+      # This task only runs on Debian-based systems (Debian, Ubuntu, Mint, etc.)
+
+    - name: Install Apache and PHP (Alpine Linux)
+      community.general.apk:
+        name:
+          - apache2           # Apache web server on Alpine
+          - php83-apache2     # PHP 8.3 with Apache module
+          - php83-mysqli      # PHP extension for MySQL/MariaDB connectivity
+          - php83-session     # PHP session support (often needed for web apps)
+        state: present
+        update_cache: yes   # Update package cache (equivalent to 'apk update')
+      when: ansible_facts['os_family'] == "Alpine"
+      # This task only runs on Alpine Linux systems
+      # Note: Alpine uses specific versioned packages (php83 instead of php)
+
+    ########################################
+    # TASK 2: Configure Apache document root permissions
+    ########################################
+    # Set proper permissions on the web server document root
+    # This is the same for both distributions
+
+    - name: Give writable mode to http folder
+      ansible.builtin.file:
+        path: /var/www/html       # Default Apache document root
+        state: directory          # Ensure it's a directory
+        mode: '0755'              # Permissions: owner=rwx, group=rx, others=rx
+      # 0755 means:
+      # - Owner (root/apache): read, write, execute
+      # - Group: read and execute
+      # - Others: read and execute
+
+    ########################################
+    # TASK 3: Remove default welcome page
+    ########################################
+    # Most Apache installations come with a default index.html
+    # We remove it to deploy our own application
+
+    - name: Remove default index.html
+      ansible.builtin.file:
+        path: /var/www/html/index.html
+        state: absent  # Ensure the file does not exist
+      # This prevents conflicts with our application's index files
+
+    ########################################
+    # TASK 4: Deploy application files
+    ########################################
+    # Copy the entire application directory to the web server
+
+    - name: Upload web application source files
+      ansible.builtin.copy:
+        src: app/           # Local source directory (trailing slash = copy contents)
+        dest: /var/www/html/  # Remote destination directory
+      # Note: 'app/' with trailing slash copies the CONTENTS of app/
+      # Without slash, it would copy the app directory itself
+
+    ########################################
+    # TASK 5: Deploy database configuration
+    ########################################
+    # Use Jinja2 template to create PHP config file with dynamic values
+
+    - name: Deploy PHP database configuration from template
+      ansible.builtin.template:
+        src: db-config.php.j2     # Jinja2 template file (local)
+        dest: /var/www/html/db-config.php  # Generated PHP file (remote)
+      # Templates allow us to inject variables (like DB credentials) into config files
+      # The .j2 template can reference variables from vars/main.yml
+
+    ########################################
+    # TASK 6: Start and enable Apache service
+    ########################################
+    # Different distributions may use different service names
+    # - Debian/Ubuntu: apache2
+    # - Alpine: apache2 (same, but may differ on other Alpine setups)
+
+    - name: Ensure Apache service is started and enabled (Debian/Ubuntu)
+      ansible.builtin.service:
+        name: apache2
+        state: started   # Start the service now if not running
+        enabled: yes     # Enable service to start automatically on boot
+      when: ansible_facts['os_family'] == "Debian"
+      # Service management is idempotent: safe to run multiple times
+
+    - name: Ensure Apache service is started and enabled (Alpine)
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: yes
+      when: ansible_facts['os_family'] == "Alpine"
+      # On Alpine, services are managed via OpenRC instead of systemd
+      # However, the Ansible service module abstracts this difference
+
+###################
+# DATABASE SERVER
+###################
+
+- name: Configure database server
+  hosts: db
+  become: true
+  vars_files: vars/main.yml
+  vars:
+    root_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          64656564376136363030663261353636653338363261666161653466636139653736626536613330
+          3538323730663262613961363561656430366665616463630a643934343232393963396434353332
+          33666333356437613233643639386237303239336164363738323638346461623030343137666136
+          6662366333363363360a636539666565613132383738323061376438373933343837356634336330
+          63613332623963303466383934376262336535666135643933313565313237373038
+
+  tasks:
+  - name: install mysql
+    ansible.builtin.apt:
+      name: 
+        - mariadb-server
+        - python3-pymysql # for mysql_db and mysql_user modules
+      state: present
+      update_cache: yes  
+
+  - name: Create MySQL client config
+    ansible.builtin.copy:
+      dest: "/root/.my.cnf"
+      content: |
+        [client]
+        user=root
+        password={{ root_password }}
+      mode: 0400
+
+  - name: Allow external MySQL connexions (1/2)
+    ansible.builtin.lineinfile:
+      path: /etc/mysql/mariadb.conf.d/50-server.cnf
+      regexp: '^skip-external-locking'
+      line: "# skip-external-locking"
+    notify: Restart mysql
+
+  - name: Allow external MySQL connexions (2/2)
+    ansible.builtin.lineinfile:
+      path: /etc/mysql/mariadb.conf.d/50-server.cnf
+      regexp: '^bind-address'
+      line: "# bind-address"
+    notify: Restart mysql
+
+  - name: upload sql table config
+    ansible.builtin.template:
+      src: "table.sql.j2"
+      dest: "/tmp/table.sql"
+  
+  - name: Set MySQL root password
+    community.mysql.mysql_user:
+      name: root
+      password: "{{ root_password }}"
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+      host_all: true
+      check_implicit_admin: true
+      state: present
+
+  - name: add sql table to database
+    community.mysql.mysql_db:
+      name: "{{ mysql_dbname }}"
+      # state: present
+      login_user: root
+      login_password: '{{ root_password }}'
+      state: import 
+      target: /tmp/table.sql
+
+  - name: "Create {{ mysql_user }} with all {{ mysql_dbname }} privileges"
+    community.mysql.mysql_user:
+      name: "{{ mysql_user }}"
+      password: "{{ mysql_password }}"
+      priv: "{{ mysql_dbname }}.*:ALL"
+      host: "{{ webserver_host }}"
+      state: present
+      login_user: root
+      login_password: '{{ root_password }}'
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  handlers:
+    - name: Restart mysql
+      service:
+        name: mysql
+        state: restarted

@@ -1,0 +1,90 @@
+---
+########################################
+# DATABASE ROLE - METADATA
+########################################
+# Metadata provides information about the role:
+# - Dependencies on other roles
+# - Ansible Galaxy information
+# - Supported platforms and versions
+
+# ROLE DEPENDENCIES
+# List any roles that must run before this role
+dependencies: []
+  # Example: If this role needs a firewall configured first:
+  # - role: firewall
+  #   vars:
+  #     mysql_port: 3306
+  #     allowed_ips:
+  #       - "{{ webserver_host }}"
+
+# ANSIBLE GALAXY INFORMATION
+# This information is used when publishing the role to Ansible Galaxy
+galaxy_info:
+  # Author name
+  author: Aelion Training
+
+  # Short description
+  description: Install and configure MariaDB/MySQL database server with remote access support
+
+  # Company (optional)
+  # company: Aelion
+
+  # License (required for Galaxy)
+  license: MIT
+
+  # Minimum Ansible version required to use this role
+  min_ansible_version: "2.9"
+
+  # Supported platforms
+  # This helps users find roles for their target systems
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye   # Debian 11
+        - bookworm   # Debian 12
+    - name: Ubuntu
+      versions:
+        - focal      # 20.04 LTS
+        - jammy      # 22.04 LTS
+        - noble      # 24.04 LTS
+    - name: Alpine
+      versions:
+        - all
+
+  # Galaxy tags for categorization (maximum 20 tags)
+  # These help users discover your role
+  galaxy_tags:
+    - database
+    - mysql
+    - mariadb
+    - lamp
+    - sql
+    - debian
+    - ubuntu
+    - alpine
+
+# REQUIRED COLLECTIONS
+# List Ansible collections needed by this role
+collections:
+  - community.mysql       # For mysql_user, mysql_db modules
+  - community.general     # For Alpine apk module
+
+# ROLE INFORMATION FOR STUDENTS:
+#
+# WHY USE ROLES?
+# 1. Reusability: Use the same database setup across multiple projects
+# 2. Organization: Keep related tasks, handlers, and variables together
+# 3. Sharing: Share with team or publish to Ansible Galaxy
+# 4. Testing: Easier to test role independently with molecule
+# 5. Maintenance: Updates in one place affect all playbooks using the role
+#
+# HOW TO USE THIS ROLE:
+# In your playbook:
+#   roles:
+#     - role: database
+#       vars:
+#         mysql_dbname: myapp_db
+#         mysql_user: myapp_user
+#         mysql_password: "{{ vault_mysql_password }}"
+#         root_password: "{{ vault_root_password }}"
+#         webserver_host: "192.168.1.10"

@@ -1,0 +1,66 @@
+---
+########################################
+# DATABASE ROLE - HANDLERS
+########################################
+# Handlers are special tasks that only run when notified by other tasks
+# They run at the end of the play, after all tasks have executed
+# Multiple notifications to the same handler only trigger it once
+
+# WHAT ARE HANDLERS?
+# - Special tasks that respond to notifications
+# - Used for actions that should only happen when changes occur
+# - Common use: restart services after configuration changes
+# - Run in the order they are defined, not the order they are notified
+# - Only run if notified AND if the notifying task reported "changed"
+
+# WHY USE HANDLERS?
+# - Efficiency: Restart service once even if multiple config changes
+# - Clarity: Separates "what to change" from "how to apply changes"
+# - Idempotency: Service only restarts when actually needed
+
+########################################
+# HANDLER: Restart MySQL Service
+########################################
+# This handler restarts MySQL/MariaDB after configuration changes
+# It's triggered by tasks that modify MySQL configuration files
+
+- name: Restart mysql
+  ansible.builtin.service:
+    name: mysql          # Service name on Debian/Ubuntu
+    state: restarted     # Stop then start the service
+  when: ansible_facts['os_family'] == "Debian"
+  # Restarting is necessary after changing:
+  # - bind-address (network listening configuration)
+  # - skip-external-locking (connection settings)
+  # - Any my.cnf or mariadb.conf.d/*.cnf files
+
+- name: Restart mysql
+  ansible.builtin.service:
+    name: mariadb        # Service name on Alpine
+    state: restarted
+  when: ansible_facts['os_family'] == "Alpine"
+  # Alpine uses 'mariadb' as the service name instead of 'mysql'
+
+# HOW TO USE THIS HANDLER:
+# In tasks/main.yml, add "notify: Restart mysql" to any task that changes config
+# Example:
+#   - name: Change MySQL configuration
+#     ansible.builtin.lineinfile:
+#       path: /etc/mysql/my.cnf
+#       line: "max_connections = 200"
+#     notify: Restart mysql
+#
+# The handler will only run if the lineinfile task reports "changed"
+
+# HANDLER EXECUTION ORDER:
+# 1. All tasks in the play execute
+# 2. If any task notified this handler AND reported changed status
+# 3. Handler runs once at the end of the play
+# 4. If play fails before handlers run, handlers are skipped
+#    (use --force-handlers flag to run them anyway)
+
+# BEST PRACTICES:
+# - Keep handlers simple and focused
+# - Use descriptive names that match the notification string
+# - Handlers should be idempotent (safe to run multiple times)
+# - Don't rely on handler execution order across different files

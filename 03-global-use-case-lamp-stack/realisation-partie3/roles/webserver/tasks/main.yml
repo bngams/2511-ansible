@@ -1,0 +1,138 @@
+---
+########################################
+# WEBSERVER ROLE - MAIN TASKS
+########################################
+# This is the main entry point for the webserver role
+# It orchestrates all tasks needed to configure an Apache+PHP web server
+# on multiple Linux distributions (Debian/Ubuntu and Alpine)
+
+# WHAT IS A ROLE?
+# A role is a way to organize Ansible content into reusable components
+# Roles have a defined directory structure:
+#   - tasks/      : The tasks to execute (this file)
+#   - handlers/   : Handlers that respond to notifications
+#   - templates/  : Jinja2 template files
+#   - files/      : Static files to copy
+#   - vars/       : Variables with high priority
+#   - defaults/   : Default variables (lowest priority)
+#   - meta/       : Role metadata (dependencies, etc.)
+
+# WHY USE ROLES?
+# - Reusability: Use the same role across multiple playbooks
+# - Organization: Keep related content together
+# - Sharing: Roles can be shared via Ansible Galaxy
+# - Maintainability: Easier to update and debug
+
+########################################
+# TASK 1: Install Apache and PHP packages
+########################################
+# Different Linux distributions use different package managers and package names
+# We use conditional execution (when clause) to handle distribution differences
+
+- name: Install Apache and PHP (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - apache2       # Apache web server on Debian-based systems
+      - php           # PHP interpreter
+      - php-mysql     # PHP extension for MySQL/MariaDB connectivity
+    state: present    # Ensure packages are installed
+    update_cache: yes # Update package cache before installing (apt update)
+  when: ansible_facts['os_family'] == "Debian"
+  # This task runs ONLY on Debian-based systems (Debian, Ubuntu, Linux Mint, etc.)
+  # The 'when' condition checks the OS family gathered by Ansible facts
+
+- name: Install Apache and PHP (Alpine Linux)
+  community.general.apk:
+    name:
+      - apache2           # Apache web server on Alpine
+      - php83-apache2     # PHP 8.3 with Apache integration module
+      - php83-mysqli      # PHP MySQL/MariaDB extension
+      - php83-session     # PHP session handling (needed for most web apps)
+    state: present
+    update_cache: yes   # Update package cache (apk update)
+  when: ansible_facts['os_family'] == "Alpine"
+  # This task runs ONLY on Alpine Linux systems
+  # Note: Alpine uses versioned PHP packages (php83 instead of generic php)
+
+########################################
+# TASK 2: Configure Apache document root
+########################################
+# Set proper permissions on the web server document root directory
+# This ensures Apache can read files and prevents unauthorized writes
+
+- name: Ensure web document root has correct permissions
+  ansible.builtin.file:
+    path: /var/www/html       # Standard Apache document root
+    state: directory          # Ensure it exists and is a directory
+    mode: '0755'              # Unix permissions (octal notation)
+  # Permission breakdown (0755):
+  # - First digit (0): Special permissions (none in this case)
+  # - Second digit (7): Owner permissions = read(4) + write(2) + execute(1)
+  # - Third digit (5): Group permissions = read(4) + execute(1)
+  # - Fourth digit (5): Others permissions = read(4) + execute(1)
+  # Execute permission on directories means "can list directory contents"
+
+########################################
+# TASK 3: Remove default welcome page
+########################################
+# Most Apache installations include a default index.html welcome page
+# We remove it to prevent conflicts with our application
+
+- name: Remove default Apache welcome page
+  ansible.builtin.file:
+    path: /var/www/html/index.html
+    state: absent  # Ensure the file does NOT exist
+  # If the file doesn't exist, this task does nothing (idempotent)
+  # This prevents the default page from overriding our app's index
+
+########################################
+# TASK 4: Deploy application files
+########################################
+# Copy the entire web application from the control node to the web server
+
+- name: Deploy web application files
+  ansible.builtin.copy:
+    src: app/              # Source: relative to files/ directory in role
+    dest: /var/www/html/   # Destination: Apache document root on target
+  # IMPORTANT: The trailing slash on 'app/' means "copy CONTENTS of app/"
+  # Without the trailing slash, it would copy the app/ directory itself
+  # Result: Contents of app/ are placed directly in /var/www/html/
+
+########################################
+# TASK 5: Deploy database configuration
+########################################
+# Use a Jinja2 template to generate PHP database config with variables
+
+- name: Deploy PHP database configuration from template
+  ansible.builtin.template:
+    src: db-config.php.j2           # Template source (in templates/ directory)
+    dest: /var/www/html/db-config.php  # Generated file destination
+  # Templates allow us to inject variables (database credentials, hosts, etc.)
+  # into configuration files dynamically
+  # Variables come from: role defaults, role vars, playbook vars, inventory vars
+  # Template syntax: {{ variable_name }} for substitution
+
+########################################
+# TASK 6: Start and enable Apache service
+########################################
+# Ensure Apache is running and will start automatically on system boot
+# Different distributions may use different service names or init systems
+
+- name: Ensure Apache service is running (Debian/Ubuntu)
+  ansible.builtin.service:
+    name: apache2
+    state: started   # Start the service if not already running
+    enabled: yes     # Enable automatic start on boot (systemd/sysvinit)
+  when: ansible_facts['os_family'] == "Debian"
+  # Debian/Ubuntu use systemd (modern systems) or sysvinit (older systems)
+  # Ansible abstracts the difference - this works on both
+
+- name: Ensure Apache service is running (Alpine)
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: yes
+  when: ansible_facts['os_family'] == "Alpine"
+  # Alpine uses OpenRC as its init system (not systemd)
+  # Ansible's service module handles this automatically
+  # No need to use different commands for different init systems

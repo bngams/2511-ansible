@@ -1,0 +1,20 @@
+---
+# PREPARATION DES NODES
+- name: Prepare all nodes for Ansible
+  hosts: all
+  become: true
+  gather_facts: false
+
+  roles:
+    - bootstrap_python
+
+- name: Now use normal modules (Python dispo)
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Touch a file with normal module
+      ansible.builtin.file:
+        path: /tmp/ansible_ok
+        state: touch
