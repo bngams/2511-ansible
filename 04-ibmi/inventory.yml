@@ -1,0 +1,19 @@
+# inventaire pour se connecter aux machines IBM i
+# exemple sur https://github.com/IBM/ansible-for-i/blob/devel/playbooks/hosts_ibmi.ini
+all:
+  hosts:
+    ibmi1:
+      # ansible_host: #IP ...
+      # ansible_user: myuser
+      # ansible_password: mypassword
+      # ansible_connection: ibmi_ssh  
+    ibmi2:
+      # ansible_host: #IP ...
+      # ansible_user: myuser
+      # ansible_password: mypassword
+      # ansible_connection: ibmi_ssh
+  children:
+    ibmi_hosts:
+      hosts:
+        ibmi1:
+        ibmi2:

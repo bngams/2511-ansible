@@ -1,0 +1,19 @@
+---
+- name: Mes taches IBM i
+  hosts: ibmi_hosts
+  gather_facts: false
+  become: false
+  # Installé en amont avec les requirements.yml
+  # collections:
+  #   - ibm.power_ibmi
+
+  tasks:
+    - name: Afficher la version d'IBM i
+      # https://galaxy.ansible.com/ui/repo/published/ibm/power_ibmi/content/module/ibmi_cl_command/?keywords=command#examples
+      ibm.power_ibmi.ibmi_cl_command:
+        command: "DSPSYSVAL SYSVAL(QSYSVER)"
+      register: sysval_output
+
+    - name: Afficher le résultat de la commande
+      ansible.builtin.debug:
+        var: sysval_output.stdout_lines
